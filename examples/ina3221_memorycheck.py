@@ -4,9 +4,10 @@
 
 import gc
 import sys
-import board
+from machine import Pin, SoftI2C
+from ina3221 import *
 
-i2c_bus = board.I2C()
+i2c_bus = SoftI2C(scl=Pin(22), sda=Pin(21), freq=400000)
 
 gc.collect(); gc.collect(); gc.collect(); before = gc.mem_free();
 

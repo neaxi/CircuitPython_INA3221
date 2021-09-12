@@ -20,12 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 """
-`barbudor_INA3221.full <full>` - Full version library
-=====================================================
+Driver for the Texas Instruments INA3221 3 channels current sensor
 
-CircuitPython driver for the Texas Instruments INA3221 3 channels current sensor
-
-Author : Barbudor (Jean-Michel Mercier)
+CircuitPython Author : Barbudor (Jean-Michel Mercier)
+MicroPython mods : neaxi
 
 Implementation Notes
 --------------------
@@ -35,28 +33,23 @@ Value of ``channel`` parameter must be ``1``, ``2`` or ``3``. **Do not use** ``0
 
 **Memory usage:**
 
-Tested with CircuitPython 4.0.0-rc.1 on CircuitPlayground Express:
+Tested with Micropython v1.17 (2021-09-02) on ESP32 DevKitC:
 
-* ``from barbudor_ina3221 import INA3221``        => 6704 bytes
-* ``ina3221 = INA3221(i2c_bus)``                  =>  112 bytes
+* ``from ina3221 import INA3221``                 => 6912 bytes
+* ``ina = INA3221(i2c_bus)``                      => 96 bytes
 
 **Hardware:**
 
 * Device: `INA3221 <http://www.ti.com/product/INA3221>`_ Triple, Low-/High-Side, I2C Out
   Current/Voltage Monitor.
 
-**Software and Dependencies:**
-
-* Adafruit CircuitPython firmware (3.1+):  https://github.com/adafruit/circuitpython/releases
-* Adafruit Bus Device library: https://github.com/adafruit/Adafruit_CircuitPython_BusDevice
 """
 
 # imports
 from micropython import const
-from adafruit_bus_device.i2c_device import I2CDevice
 
 __version__ = "0.0.0-auto.0"
-__repo__ = "https://github.com/barbudor/CircuitPython_INA3221"
+__repo__ = "https://github.com/neaxi/MicroPython_INA3221"
 
 # pylint: disable=bad-whitespace
 
@@ -167,15 +160,13 @@ class INA3221:
     def write(self, reg, value):
         """Write value in device register"""
         seq = bytearray([reg, (value >> 8) & 0xFF, value & 0xFF])
-        with self.i2c_device as i2c:
-            i2c.write(seq)
+        self.i2c_device.write(seq)
 
     def read(self, reg):
         """Return value from device register"""
         buf = bytearray(3)
         buf[0] = reg
-        with self.i2c_device as i2c:
-            i2c.write_then_readinto(buf, buf, out_end=1, in_start=1)
+        self.write_then_readinto(buf, buf, out_end=1, in_start=1)
         value = (buf[1] << 8) | (buf[2])
         return value
 
@@ -186,16 +177,89 @@ class INA3221:
         value &= mask
         self.write(reg, regvalue | value)
 
+    def writeto_then_readfrom(
+        self,
+        address,
+        buffer_out,
+        buffer_in,
+        *,
+        out_start=0,
+        out_end=None,
+        in_start=0,
+        in_end=None,
+        stop=False
+    ):
+        """Write data from buffer_out to an address and then
+        read data from an address and into buffer_in
+        """
+        if out_end:
+            self.i2c_device.writeto(address, buffer_out[out_start:out_end], stop)
+        else:
+            self.i2c_device.writeto(address, buffer_out[out_start:], stop)
 
-    def __init__(self, i2c_bus, i2c_addr = _DEFAULT_ADDRESS, shunt_resistor = (0.1, 0.1, 0.1)):
-        self.i2c_device = I2CDevice(i2c_bus, i2c_addr)
+        if not in_end:
+            in_end = len(buffer_in)
+        read_buffer = memoryview(buffer_in)[in_start:in_end]
+        self.i2c_device.readfrom_into(address, read_buffer, stop)
+        
+
+    def write_then_readinto(
+        self,
+        out_buffer,
+        in_buffer,
+        *,
+        out_start=0,
+        out_end=None,
+        in_start=0,
+        in_end=None
+    ):
+        """
+        Write the bytes from ``out_buffer`` to the device, then immediately
+        reads into ``in_buffer`` from the device. The number of bytes read
+        will be the length of ``in_buffer``.
+
+        If ``out_start`` or ``out_end`` is provided, then the output buffer
+        will be sliced as if ``out_buffer[out_start:out_end]``. This will
+        not cause an allocation like ``buffer[out_start:out_end]`` will so
+        it saves memory.
+
+        If ``in_start`` or ``in_end`` is provided, then the input buffer
+        will be sliced as if ``in_buffer[in_start:in_end]``. This will not
+        cause an allocation like ``in_buffer[in_start:in_end]`` will so
+        it saves memory.
+
+        :param bytearray out_buffer: buffer containing the bytes to write
+        :param bytearray in_buffer: buffer containing the bytes to read into
+        :param int out_start: Index to start writing from
+        :param int out_end: Index to read up to but not include; if None, use ``len(out_buffer)``
+        :param int in_start: Index to start writing at
+        :param int in_end: Index to write up to but not include; if None, use ``len(in_buffer)``
+        """
+        if out_end is None:
+            out_end = len(out_buffer)
+        if in_end is None:
+            in_end = len(in_buffer)
+
+        self.writeto_then_readfrom(
+            self.i2c_addr,
+            out_buffer,
+            in_buffer,
+            out_start=out_start,
+            out_end=out_end,
+            in_start=in_start,
+            in_end=in_end,
+        )
+
+
+    def __init__(self, i2c_instance, i2c_addr = _DEFAULT_ADDRESS, shunt_resistor = (0.1, 0.1, 0.1)):
+        self.i2c_device = i2c_instance
         self.i2c_addr = i2c_addr
         self.shunt_resistor = shunt_resistor
-
         self.write(C_REG_CONFIG,  C_AVERAGING_16_SAMPLES | \
                                   C_VBUS_CONV_TIME_1MS | \
                                   C_SHUNT_CONV_TIME_1MS | \
                                   C_MODE_SHUNT_AND_BUS_CONTINOUS )
+
 
     def is_channel_enabled(self, channel=1):
         """Returns if a given channel is enabled or not"""

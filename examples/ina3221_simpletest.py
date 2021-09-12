@@ -2,17 +2,10 @@
 
 import time
 import sys
-import board
+from machine import Pin, SoftI2C
+from ina3221 import *
 
-# on small platform, save memory using the 'lite' version
-# pylint: disable=unused-wildcard-import,wildcard-import
-if 'SAMD21' in sys.platform:
-    from barbudor_ina3221.lite import INA3221
-else:
-    from barbudor_ina3221.full import *
-# pylint: enable=unused-wildcard-import,wildcard-import
-
-i2c_bus = board.I2C()
+i2c_bus = SoftI2C(scl=Pin(22), sda=Pin(21), freq=400000)
 ina3221 = INA3221(i2c_bus)
 
 # change configuration (requires 'full' version of the lib)
